@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Attendance Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    body { font-family: -apple-system, sans-serif; text-align: center; padding: 20px; background:#f5f5f5; }
+    h2 { color: #305496; }
+    #reader { width: 320px; max-width: 90vw; margin: 20px auto; }
+    #result { font-size: 18px; font-weight: bold; min-height: 30px; margin-top: 10px; }
+    #status { color: #666; font-size: 14px; }
+    #startBtn {
+      padding: 14px 28px; font-size: 16px; background: #305496; color: white;
+      border: none; border-radius: 8px; cursor: pointer; margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Attendance Scanner</h2>
+  <div id="status">Tap "Start Camera" to begin scanning</div>
+  <button id="startBtn" onclick="startScanner()">📷 Start Camera</button>
+  <div id="reader"></div>
+  <p id="result"></p>
+
+  <script>
+    // PASTE YOUR APPS SCRIPT WEB APP URL HERE (the one ending in /exec)
+    const API_URL = "https://script.google.com/macros/s/PASTE_YOUR_DEPLOYMENT_ID_HERE/exec";
+
+    var qrScanner = null;
+    var lastScan = "";
+    var lastScanTime = 0;
+
+    function startScanner() {
+      document.getElementById('status').innerText = "Requesting camera access...";
+      document.getElementById('startBtn').style.display = 'none';
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        document.getElementById('status').innerText = "❌ Camera API not available. Make sure you're on HTTPS and using Safari/Chrome directly.";
+        document.getElementById('startBtn').style.display = 'inline-block';
+        return;
+      }
+
+      qrScanner = new Html5Qrcode("reader");
+
+      Html5Qrcode.getCameras().then(devices => {
+        if (!devices || devices.length === 0) {
+          document.getElementById('status').innerText = "❌ No camera found on this device.";
+          document.getElementById('startBtn').style.display = 'inline-block';
+          return;
+        }
+
+        var cameraId = devices[devices.length - 1].id;
+        for (var i = 0; i < devices.length; i++) {
+          if (devices[i].label.toLowerCase().includes('back')) {
+            cameraId = devices[i].id;
+          }
+        }
+
+        qrScanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: 250 },
+          onScanSuccess
+        ).then(() => {
+          document.getElementById('status').innerText = "Scanning... point camera at QR code";
+        }).catch(err => {
+          qrScanner.start(
+            cameraId,
+            { fps: 10, qrbox: 250 },
+            onScanSuccess
+          ).then(() => {
+            document.getElementById('status').innerText = "Scanning... point camera at QR code";
+          }).catch(err2 => {
+            document.getElementById('status').innerText = "❌ Camera error: " + err2;
+            document.getElementById('startBtn').style.display = 'inline-block';
+          });
+        });
+
+      }).catch(err => {
+        document.getElementById('status').innerText = "❌ Camera permission error: " + err;
+        document.getElementById('startBtn').style.display = 'inline-block';
+      });
+    }
+
+    function onScanSuccess(decodedText) {
+      var now = Date.now();
+      if (decodedText === lastScan && (now - lastScanTime) < 4000) return;
+      lastScan = decodedText;
+      lastScanTime = now;
+
+      document.getElementById('result').innerText = "Scanning...";
+      var url = API_URL + "?id=" + encodeURIComponent(decodedText);
+      fetch(url).then(r => r.json()).then(data => {
+        if (data.status === "ok") {
+          document.getElementById('result').innerText = "✅ " + data.name + " - Day " + data.day + " - " + data.time;
+        } else if (data.status === "already") {
+          document.getElementById('result').innerText = "⚠️ " + data.name + " already marked for Day " + data.day;
+        } else {
+          document.getElementById('result').innerText = "❌ " + data.message;
+        }
+      }).catch(e => {
+        document.getElementById('result').innerText = "❌ Network/server error: " + e;
+      });
+    }
+  </script>
+</body>
+</html>
